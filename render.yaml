@@ -1,0 +1,17 @@
+# https://render.com/docs/blueprint-spec
+# One-click deploy via Render Blueprints: https://render.com/deploy?repo=https://github.com/ht8k/mohandes-edu
+services:
+  - type: web
+    name: mohandes-edu
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_PATH
+        value: /data/app.db
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: mohandes-edu-data
+      mountPath: /data
+      sizeGB: 1
