@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply font-sans bg-slate-100 text-slate-900 antialiased;
+    font-feature-settings: "kern", "liga";
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 9999px;
+  }
+  .no-tap-highlight {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
