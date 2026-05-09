@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock4, MessageCircleQuestion, Plus, Send } from "lucide-react";
+import { CheckCircle2, Clock4, MessageCircleQuestion, PencilLine, Plus, Send, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { SectionTitle } from "../components/PageContainer";
 import { api } from "../lib/api";
@@ -149,8 +149,11 @@ export function QuestionsPage() {
 function QuestionCard({ q, onAnswered }: { q: Question; onAnswered: () => void }) {
   const { user } = useAuth();
   const [showAnswer, setShowAnswer] = useState(false);
-  const [answer, setAnswer] = useState("");
+  const [editingAnswer, setEditingAnswer] = useState(false);
+  const [answer, setAnswer] = useState(q.answer ?? "");
   const [submitting, setSubmitting] = useState(false);
+
+  const isTeacher = user?.role === "teacher";
 
   async function handleAnswer(e: FormEvent) {
     e.preventDefault();
@@ -158,13 +161,26 @@ function QuestionCard({ q, onAnswered }: { q: Question; onAnswered: () => void }
     setSubmitting(true);
     try {
       await api.answerQuestion(q.id, answer);
-      setAnswer("");
       setShowAnswer(false);
+      setEditingAnswer(false);
       onAnswered();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleRemoveAnswer() {
+    const ok = window.confirm("هل تريد حذف الإجابة؟");
+    if (!ok) return;
+    try {
+      await api.unanswerQuestion(q.id);
+      setAnswer("");
+      setEditingAnswer(false);
+      onAnswered();
+    } catch (e) {
+      alert((e as Error).message);
     }
   }
 
@@ -188,17 +204,45 @@ function QuestionCard({ q, onAnswered }: { q: Question; onAnswered: () => void }
       <p className="mt-2 text-[11px] text-slate-400 text-right">
         {q.student.full_name} • {formatRelative(q.created_at)}
       </p>
-      {q.is_answered && q.answer && (
-        <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm text-slate-700 text-right">
-          <p className="font-bold text-emerald-700 mb-1">الإجابة:</p>
-          <p>{q.answer}</p>
+      {q.is_answered && q.answer && !editingAnswer && (
+        <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-right">
+          <div className="flex items-start justify-between gap-2">
+            {isTeacher && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={handleRemoveAnswer}
+                  className="w-7 h-7 rounded-full bg-white text-red-600 flex items-center justify-center"
+                  title="حذف الإجابة"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    setAnswer(q.answer ?? "");
+                    setEditingAnswer(true);
+                  }}
+                  className="w-7 h-7 rounded-full bg-white text-brand-700 flex items-center justify-center"
+                  title="تعديل الإجابة"
+                >
+                  <PencilLine className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="flex-1 text-sm text-slate-700">
+              <p className="font-bold text-emerald-700 mb-1">الإجابة:</p>
+              <p>{q.answer}</p>
+            </div>
+          </div>
         </div>
       )}
-      {user?.role === "teacher" && !q.is_answered && (
+      {isTeacher && !q.is_answered && (
         <div className="mt-3">
           {!showAnswer ? (
             <button
-              onClick={() => setShowAnswer(true)}
+              onClick={() => {
+                setAnswer("");
+                setShowAnswer(true);
+              }}
               className="w-full bg-brand-50 text-brand-700 font-bold py-2 rounded-xl text-sm"
             >
               الإجابة على السؤال
@@ -213,16 +257,53 @@ function QuestionCard({ q, onAnswered }: { q: Question; onAnswered: () => void }
                 className="w-full bg-slate-50 rounded-xl px-3 py-2 text-sm outline-none border border-transparent focus:border-brand-300"
                 required
               />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-emerald-600 disabled:bg-slate-300 text-white font-bold py-2 rounded-xl text-sm"
-              >
-                {submitting ? "جاري الإرسال..." : "إرسال الإجابة"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAnswer(false)}
+                  className="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-sm"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-emerald-600 disabled:bg-slate-300 text-white font-bold py-2 rounded-xl text-sm"
+                >
+                  {submitting ? "جاري الإرسال..." : "إرسال الإجابة"}
+                </button>
+              </div>
             </form>
           )}
         </div>
+      )}
+      {isTeacher && q.is_answered && editingAnswer && (
+        <form onSubmit={handleAnswer} className="mt-3 space-y-2">
+          <textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder="اكتب إجابتك..."
+            rows={3}
+            className="w-full bg-slate-50 rounded-xl px-3 py-2 text-sm outline-none border border-transparent focus:border-brand-300"
+            required
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setEditingAnswer(false)}
+              className="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-sm"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 bg-emerald-600 disabled:bg-slate-300 text-white font-bold py-2 rounded-xl text-sm"
+            >
+              {submitting ? "جاري الحفظ..." : "حفظ التعديل"}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );

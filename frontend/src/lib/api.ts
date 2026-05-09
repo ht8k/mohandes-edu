@@ -230,6 +230,16 @@ function delay<T>(value: T, ms = 80): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(clone(value)), ms));
 }
 
+function recomputeCourseTotals(courseId: number): void {
+  const course = state.courses.find((c) => c.id === courseId);
+  if (!course) return;
+  const lectures = state.lectures.filter((l) => l.course_id === courseId);
+  course.lessons_count = lectures.length;
+  course.hours_count = Math.ceil(
+    lectures.reduce((sum, l) => sum + l.duration_minutes, 0) / 60,
+  );
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(TOKEN_KEY);
@@ -401,6 +411,9 @@ export const api = {
     }
     const course = state.courses.find((c) => c.id === data.course_id);
     if (!course) throw new Error("الكورس غير موجود");
+    if (course.teacher_id !== teacher.id) {
+      throw new Error("لا يمكنك إضافة محاضرة إلى كورس لا تملكه");
+    }
     const lecture: Lecture = {
       id: state.nextIds.lecture++,
       title: data.title,
@@ -416,14 +429,103 @@ export const api = {
       created_at: new Date().toISOString(),
     };
     state.lectures.push(lecture);
-    course.lessons_count = state.lectures.filter((l) => l.course_id === course.id).length;
-    course.hours_count = Math.ceil(
-      state.lectures
-        .filter((l) => l.course_id === course.id)
-        .reduce((sum, l) => sum + l.duration_minutes, 0) / 60,
-    );
+    recomputeCourseTotals(course.id);
     persist();
     return delay(lecture);
+  },
+
+  updateLecture: async (
+    id: number,
+    data: {
+      title?: string;
+      description?: string | null;
+      duration_minutes?: number;
+    },
+  ): Promise<Lecture> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم تعديل المحاضرات");
+    }
+    const lecture = state.lectures.find((l) => l.id === id);
+    if (!lecture) throw new Error("المحاضرة غير موجودة");
+    const course = state.courses.find((c) => c.id === lecture.course_id);
+    if (!course || course.teacher_id !== teacher.id) {
+      throw new Error("لا يمكنك تعديل محاضرة لا تملكها");
+    }
+    if (data.title !== undefined) lecture.title = data.title;
+    if (data.description !== undefined) lecture.description = data.description;
+    if (data.duration_minutes !== undefined) lecture.duration_minutes = data.duration_minutes;
+    recomputeCourseTotals(course.id);
+    persist();
+    return delay(lecture);
+  },
+
+  deleteLecture: async (id: number): Promise<void> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم حذف المحاضرات");
+    }
+    const lecture = state.lectures.find((l) => l.id === id);
+    if (!lecture) throw new Error("المحاضرة غير موجودة");
+    const course = state.courses.find((c) => c.id === lecture.course_id);
+    if (!course || course.teacher_id !== teacher.id) {
+      throw new Error("لا يمكنك حذف محاضرة لا تملكها");
+    }
+    state.lectures = state.lectures.filter((l) => l.id !== id);
+    recomputeCourseTotals(course.id);
+    persist();
+    return delay(undefined as unknown as void);
+  },
+
+  updateCourse: async (
+    id: number,
+    data: {
+      title?: string;
+      subject?: string;
+      grade?: string;
+      description?: string | null;
+      cover_url?: string | null;
+      is_featured?: boolean;
+    },
+  ): Promise<Course> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم تعديل الكورسات");
+    }
+    const course = state.courses.find((c) => c.id === id);
+    if (!course) throw new Error("الكورس غير موجود");
+    if (course.teacher_id !== teacher.id) {
+      throw new Error("لا يمكنك تعديل كورس لا تملكه");
+    }
+    if (data.title !== undefined) course.title = data.title;
+    if (data.subject !== undefined) course.subject = data.subject;
+    if (data.grade !== undefined) course.grade = data.grade;
+    if (data.description !== undefined) course.description = data.description;
+    if (data.cover_url !== undefined) course.cover_url = data.cover_url;
+    if (data.is_featured !== undefined) course.is_featured = data.is_featured;
+    persist();
+    return delay(course);
+  },
+
+  deleteCourse: async (id: number): Promise<void> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم حذف الكورسات");
+    }
+    const course = state.courses.find((c) => c.id === id);
+    if (!course) throw new Error("الكورس غير موجود");
+    if (course.teacher_id !== teacher.id) {
+      throw new Error("لا يمكنك حذف كورس لا تملكه");
+    }
+    state.courses = state.courses.filter((c) => c.id !== id);
+    state.lectures = state.lectures.filter((l) => l.course_id !== id);
+    state.scheduleItems = state.scheduleItems.filter((s) => s.course_id !== id);
+    state.enrollments = state.enrollments.filter((e) => e.course_id !== id);
+    state.questions = state.questions.map((q) =>
+      q.course_id === id ? { ...q, course_id: null } : q,
+    );
+    persist();
+    return delay(undefined as unknown as void);
   },
 
   listQuestions: async (params?: { answered?: boolean; course_id?: number }): Promise<Question[]> => {
@@ -467,6 +569,20 @@ export const api = {
     question.answer = answer;
     question.is_answered = true;
     question.answered_at = new Date().toISOString();
+    persist();
+    return delay(question);
+  },
+
+  unanswerQuestion: async (id: number): Promise<Question> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم حذف الإجابة");
+    }
+    const question = state.questions.find((q) => q.id === id);
+    if (!question) throw new Error("السؤال غير موجود");
+    question.answer = null;
+    question.is_answered = false;
+    question.answered_at = null;
     persist();
     return delay(question);
   },
