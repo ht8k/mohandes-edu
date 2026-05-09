@@ -1,32 +1,26 @@
-import { BarChart3, HelpCircle, Upload, Video } from "lucide-react";
+import { TrendingUp, HelpCircle, Upload, Video } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { ComponentType } from "react";
 
 type Action = {
   key: string;
   label: string;
   to: string;
-  Icon: ComponentType<{ className?: string }>;
+  Icon: LucideIcon;
   bgClass: string;
   iconClass: string;
 };
 
+// Cards are flex items inside a row with `dir="rtl"` on the document — first
+// item appears on the right (matches the target screenshot).
 const ACTIONS: Action[] = [
   {
-    key: "results",
-    label: "نتائج الطلاب",
-    to: "/profile",
-    Icon: BarChart3,
-    bgClass: "bg-emerald-50",
-    iconClass: "text-emerald-600",
-  },
-  {
-    key: "questions",
-    label: "أسئلة الطلاب",
-    to: "/questions",
-    Icon: HelpCircle,
-    bgClass: "bg-rose-50",
-    iconClass: "text-rose-600",
+    key: "upload",
+    label: "رفع المحاضرات",
+    to: "/upload",
+    Icon: Upload,
+    bgClass: "bg-brand-50",
+    iconClass: "text-brand-700",
   },
   {
     key: "lectures",
@@ -37,12 +31,20 @@ const ACTIONS: Action[] = [
     iconClass: "text-brand-700",
   },
   {
-    key: "upload",
-    label: "رفع المحاضرات",
-    to: "/upload",
-    Icon: Upload,
-    bgClass: "bg-sky-50",
-    iconClass: "text-sky-600",
+    key: "questions",
+    label: "أسئلة الطلاب",
+    to: "/questions",
+    Icon: HelpCircle,
+    bgClass: "bg-rose-50",
+    iconClass: "text-rose-600",
+  },
+  {
+    key: "results",
+    label: "نتائج الطلاب",
+    to: "/profile",
+    Icon: TrendingUp,
+    bgClass: "bg-accent-50",
+    iconClass: "text-accent-700",
   },
 ];
 
@@ -56,9 +58,9 @@ export function QuickActions() {
           className="bg-white rounded-2xl shadow-card flex flex-col items-center justify-center gap-2 px-2 py-3 text-center no-tap-highlight active:scale-95 transition-transform"
         >
           <div className={`w-12 h-12 rounded-xl ${bgClass} flex items-center justify-center`}>
-            <Icon className={`w-6 h-6 ${iconClass}`} />
+            <Icon className={`w-6 h-6 ${iconClass}`} strokeWidth={2.4} />
           </div>
-          <p className="text-xs font-semibold text-slate-700 leading-tight">{label}</p>
+          <p className="text-[11px] font-bold text-slate-700 leading-tight">{label}</p>
         </Link>
       ))}
     </div>

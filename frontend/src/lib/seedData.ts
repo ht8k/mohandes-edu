@@ -44,7 +44,8 @@ export function buildSeedData(): SeededData {
     full_name: "الأستاذ أحمد الجبوري",
     email: "ahmed@mohandes.edu",
     role: "teacher",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ahmed",
+    avatar_url:
+      "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&auto=format&fit=crop&q=70",
     bio: "مدرس مادة الفيزياء للصف السادس العلمي",
     rating: 4.9,
     students_count: 12450,
@@ -55,7 +56,8 @@ export function buildSeedData(): SeededData {
     full_name: "الأستاذ خالد علي",
     email: "khaled@mohandes.edu",
     role: "teacher",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=khaled",
+    avatar_url:
+      "https://images.unsplash.com/photo-1607990281513-2c110a25bd8c?w=400&h=400&auto=format&fit=crop&q=70",
     bio: "مدرس مادة الرياضيات",
     rating: 4.8,
     students_count: 8200,
@@ -66,7 +68,8 @@ export function buildSeedData(): SeededData {
     full_name: "الأستاذة سارة حسن",
     email: "sara@mohandes.edu",
     role: "teacher",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=sara",
+    avatar_url:
+      "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&auto=format&fit=crop&q=70",
     bio: "مدرسة مادة الكيمياء للصف السادس العلمي",
     rating: 4.7,
     students_count: 6500,
@@ -77,7 +80,8 @@ export function buildSeedData(): SeededData {
     full_name: "الأستاذ التجريبي",
     email: "teacher@mohandes.edu",
     role: "teacher",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=teacher",
+    avatar_url:
+      "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=400&h=400&auto=format&fit=crop&q=70",
     bio: "حساب تجربة لدور الأستاذ",
     rating: 4.6,
     students_count: 320,
@@ -88,7 +92,8 @@ export function buildSeedData(): SeededData {
     full_name: "علي محمد",
     email: "student@mohandes.edu",
     role: "student",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=student",
+    avatar_url:
+      "https://api.dicebear.com/7.x/avataaars/svg?seed=ali&backgroundColor=b6e3f4",
     bio: null,
     rating: 0,
     students_count: 0,

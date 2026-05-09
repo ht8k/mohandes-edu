@@ -9,11 +9,11 @@ interface Props {
 export function SearchBar({ placeholder = "ابحث عن محاضرات، دروس، أساتذة...", onChange }: Props) {
   const [value, setValue] = useState("");
   return (
-    <div className="px-4 -mt-5 relative z-10">
+    <div className="px-4 -mt-7 relative z-10">
       <div className="bg-white rounded-2xl shadow-soft flex items-center gap-2 p-2 pl-3">
         <button
           type="button"
-          className="w-10 h-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center shrink-0"
+          className="w-11 h-11 rounded-xl bg-accent-500 text-white flex items-center justify-center shrink-0 shadow-card"
           aria-label="فلتر البحث"
         >
           <SlidersHorizontal className="w-5 h-5" />
@@ -29,7 +29,7 @@ export function SearchBar({ placeholder = "ابحث عن محاضرات، درو
             }}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400 text-right"
           />
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <Search className="w-5 h-5 text-slate-400 shrink-0" />
         </div>
       </div>
     </div>
