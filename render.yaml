@@ -1,0 +1,24 @@
+# https://render.com/docs/blueprint-spec
+# One-click deploy: https://render.com/deploy?repo=https://github.com/ht8k/mohandes-edu
+#
+# Free plan: SQLite lives inside the container and is reset on every restart
+# (good for a demo — seeded data is rebuilt on boot).
+# To persist user-generated data across restarts, upgrade `plan` to `starter`
+# and uncomment the `disk:` block below (Render charges for persistent disks).
+services:
+  - type: web
+    name: mohandes-edu
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      # On the free plan, fall back to a writable in-container path.
+      # If you enable the disk block below, change this back to /data/app.db.
+      - key: DATABASE_PATH
+        value: /app/backend/app.db
+    # disk:
+    #   name: mohandes-edu-data
+    #   mountPath: /data
+    #   sizeGB: 1
