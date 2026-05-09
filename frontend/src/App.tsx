@@ -11,10 +11,15 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { UploadPage } from "./pages/UploadPage";
 
+// Vite injects BASE_URL based on the `base` config option (e.g. "/mohandes-edu/"
+// when deployed to GitHub Pages, "/" for local dev). Trim the trailing slash so
+// react-router treats "/mohandes-edu/" and "/mohandes-edu" identically.
+const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

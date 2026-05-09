@@ -11,6 +11,26 @@
       rel="stylesheet"
     />
     <title>منصة المهندس التعليمية</title>
+    <script>
+      // Decode the SPA fallback path injected by 404.html. After redirection,
+      // the URL looks like `/<base>/?/some/path` — rewrite history back to
+      // `/<base>/some/path` before React Router boots.
+      (function () {
+        var l = window.location;
+        if (l.search.indexOf("?/") === 0 || l.search.indexOf("&/") !== -1) {
+          var decoded = l.search
+            .slice(1)
+            .split("&")
+            .map(function (s) {
+              return s.replace(/~and~/g, "&");
+            })
+            .join("?");
+          if (decoded.charAt(0) === "/") {
+            window.history.replaceState(null, "", l.pathname.slice(0, -1) + decoded + l.hash);
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

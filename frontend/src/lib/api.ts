@@ -1,63 +1,22 @@
-const RAW_API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Static, browser-only "API" for the GitHub Pages deployment.
+//
+// All data lives in localStorage. On first visit (or after the seed version
+// is bumped) we hydrate from the bundled Arabic seed data in seedData.ts.
+// Subsequent reads/writes go through the same in-memory copy and are flushed
+// back to localStorage. Network calls are intentionally avoided so the SPA
+// works as a fully static GitHub Pages site without any backend.
+//
+// User-generated data (new courses, lectures, questions, enrollments,
+// answers, notifications) is preserved per browser. Users on different
+// devices see independent state — this is by design for the static demo.
 
-function parseApiUrl(rawUrl: string): { url: string; basicAuth: string | null } {
-  try {
-    const u = new URL(rawUrl);
-    if (u.username || u.password) {
-      const creds = `${decodeURIComponent(u.username)}:${decodeURIComponent(u.password)}`;
-      const basic = btoa(creds);
-      u.username = "";
-      u.password = "";
-      const cleaned = u.toString().replace(/\/$/, "");
-      return { url: cleaned, basicAuth: basic };
-    }
-    return { url: rawUrl.replace(/\/$/, ""), basicAuth: null };
-  } catch {
-    return { url: rawUrl.replace(/\/$/, ""), basicAuth: null };
-  }
-}
+import { buildSeedData } from "./seedData";
 
-const parsed = parseApiUrl(RAW_API_URL);
-export const API_URL = parsed.url;
-const BASIC_AUTH = parsed.basicAuth;
-
+const STORAGE_KEY = "mohandes_state_v1";
 const TOKEN_KEY = "mohandes_token";
+const CURRENT_USER_ID_KEY = "mohandes_current_user_id";
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string | null): void {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
-  };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  else if (BASIC_AUTH) headers["Authorization"] = `Basic ${BASIC_AUTH}`;
-
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  if (!res.ok) {
-    let message = `Request failed: ${res.status}`;
-    try {
-      const data = await res.json();
-      if (data?.detail) message = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
+export const API_URL = "static://mohandes-edu";
 
 export interface User {
   id: number;
@@ -157,66 +116,442 @@ export interface AuthResponse {
   user: User;
 }
 
+interface PersistedState {
+  users: User[];
+  courses: Course[];
+  lectures: Lecture[];
+  questions: Question[];
+  scheduleItems: ScheduleItem[];
+  enrollments: Enrollment[];
+  notificationsByUser: Record<number, Notification[]>;
+  passwords: Record<string, string>;
+  nextIds: {
+    user: number;
+    course: number;
+    lecture: number;
+    question: number;
+    schedule: number;
+    enrollment: number;
+    notification: number;
+  };
+}
+
+function maxId(items: { id: number }[]): number {
+  return items.reduce((max, item) => (item.id > max ? item.id : max), 0);
+}
+
+function buildInitialState(): PersistedState {
+  const seed = buildSeedData();
+  const notificationsByUser: Record<number, Notification[]> = {};
+  const seededStudent = seed.users.find((u) => u.email === "student@mohandes.edu");
+  if (seededStudent) {
+    notificationsByUser[seededStudent.id] = seed.notifications;
+  }
+  return {
+    users: seed.users,
+    courses: seed.courses,
+    lectures: seed.lectures,
+    questions: seed.questions,
+    scheduleItems: seed.scheduleItems,
+    enrollments: seed.enrollments,
+    notificationsByUser,
+    passwords: seed.passwords,
+    nextIds: {
+      user: maxId(seed.users) + 1,
+      course: maxId(seed.courses) + 1,
+      lecture: maxId(seed.lectures) + 1,
+      question: maxId(seed.questions) + 1,
+      schedule: maxId(seed.scheduleItems) + 1,
+      enrollment: maxId(seed.enrollments) + 1,
+      notification: maxId(seed.notifications) + 1,
+    },
+  };
+}
+
+function loadState(): PersistedState {
+  if (typeof window === "undefined") {
+    return buildInitialState();
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw) as PersistedState;
+    }
+  } catch {
+    // fall through to seeded state
+  }
+  const fresh = buildInitialState();
+  saveState(fresh);
+  return fresh;
+}
+
+function saveState(s: PersistedState): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    // localStorage quota exceeded or disabled — silently ignore
+  }
+}
+
+const state: PersistedState = loadState();
+
+function persist(): void {
+  saveState(state);
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function tokenForUser(userId: number): string {
+  return `static-token.${userId}.${Date.now()}`;
+}
+
+function userIdFromToken(token: string): number | null {
+  const match = /^static-token\.(\d+)\./.exec(token);
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
+}
+
+function findUser(userId: number): User {
+  const user = state.users.find((u) => u.id === userId);
+  if (!user) throw new Error("المستخدم غير موجود");
+  return user;
+}
+
+function ensureCurrentUser(): User {
+  const userId = getCurrentUserId();
+  if (!userId) throw new Error("الرجاء تسجيل الدخول أولاً");
+  return findUser(userId);
+}
+
+function delay<T>(value: T, ms = 80): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(clone(value)), ms));
+}
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token) window.localStorage.setItem(TOKEN_KEY, token);
+  else {
+    window.localStorage.removeItem(TOKEN_KEY);
+    window.localStorage.removeItem(CURRENT_USER_ID_KEY);
+  }
+}
+
+function setCurrentUserId(id: number | null): void {
+  if (typeof window === "undefined") return;
+  if (id === null) window.localStorage.removeItem(CURRENT_USER_ID_KEY);
+  else window.localStorage.setItem(CURRENT_USER_ID_KEY, String(id));
+}
+
+function getCurrentUserId(): number | null {
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem(CURRENT_USER_ID_KEY);
+  if (stored) {
+    const parsed = Number.parseInt(stored, 10);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  const token = getToken();
+  if (!token) return null;
+  return userIdFromToken(token);
+}
+
 export const api = {
-  login: (email: string, password: string) =>
-    request<AuthResponse>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-  register: (input: { full_name: string; email: string; password: string; role?: "student" | "teacher" }) =>
-    request<AuthResponse>("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-  me: () => request<User>("/api/auth/me"),
-
-  listCourses: (params?: { featured?: boolean; teacher_id?: number }) => {
-    const q = new URLSearchParams();
-    if (params?.featured !== undefined) q.set("featured", String(params.featured));
-    if (params?.teacher_id !== undefined) q.set("teacher_id", String(params.teacher_id));
-    const qs = q.toString();
-    return request<Course[]>(`/api/courses${qs ? `?${qs}` : ""}`);
+  login: async (email: string, password: string): Promise<AuthResponse> => {
+    const normalized = email.trim().toLowerCase();
+    const user = state.users.find((u) => u.email.toLowerCase() === normalized);
+    if (!user) {
+      throw new Error("البريد الإلكتروني غير مسجل في الحسابات التجريبية");
+    }
+    const expected = state.passwords[user.email];
+    if (expected && expected !== password) {
+      throw new Error("كلمة المرور غير صحيحة");
+    }
+    const token = tokenForUser(user.id);
+    setCurrentUserId(user.id);
+    return delay({
+      access_token: token,
+      token_type: "bearer",
+      user,
+    });
   },
-  getCourse: (id: number) => request<Course>(`/api/courses/${id}`),
-  createCourse: (data: { title: string; subject: string; grade: string; description?: string; cover_url?: string; is_featured?: boolean }) =>
-    request<Course>("/api/courses", { method: "POST", body: JSON.stringify(data) }),
 
-  listLectures: (params?: { course_id?: number; teacher_id?: number }) => {
-    const q = new URLSearchParams();
-    if (params?.course_id) q.set("course_id", String(params.course_id));
-    if (params?.teacher_id) q.set("teacher_id", String(params.teacher_id));
-    const qs = q.toString();
-    return request<Lecture[]>(`/api/lectures${qs ? `?${qs}` : ""}`);
+  register: async (input: {
+    full_name: string;
+    email: string;
+    password: string;
+    role?: "student" | "teacher";
+  }): Promise<AuthResponse> => {
+    const email = input.email.trim().toLowerCase();
+    if (state.users.some((u) => u.email.toLowerCase() === email)) {
+      throw new Error("البريد الإلكتروني مستخدم بالفعل");
+    }
+    const user: User = {
+      id: state.nextIds.user++,
+      full_name: input.full_name,
+      email,
+      role: input.role || "student",
+      avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`,
+      bio: null,
+      rating: 0,
+      students_count: 0,
+      created_at: new Date().toISOString(),
+    };
+    state.users.push(user);
+    state.passwords[user.email] = input.password;
+    persist();
+    const token = tokenForUser(user.id);
+    setCurrentUserId(user.id);
+    return delay({
+      access_token: token,
+      token_type: "bearer",
+      user,
+    });
   },
-  createLecture: (data: { title: string; description?: string; video_url?: string; duration_minutes?: number; order_index?: number; course_id: number }) =>
-    request<Lecture>("/api/lectures", { method: "POST", body: JSON.stringify(data) }),
 
-  listQuestions: (params?: { answered?: boolean; course_id?: number }) => {
-    const q = new URLSearchParams();
-    if (params?.answered !== undefined) q.set("answered", String(params.answered));
-    if (params?.course_id) q.set("course_id", String(params.course_id));
-    const qs = q.toString();
-    return request<Question[]>(`/api/questions${qs ? `?${qs}` : ""}`);
+  me: async (): Promise<User> => {
+    const user = ensureCurrentUser();
+    return delay(user);
   },
-  askQuestion: (data: { title: string; body: string; course_id?: number }) =>
-    request<Question>("/api/questions", { method: "POST", body: JSON.stringify(data) }),
-  answerQuestion: (id: number, answer: string) =>
-    request<Question>(`/api/questions/${id}/answer`, {
-      method: "POST",
-      body: JSON.stringify({ answer }),
-    }),
 
-  listSchedule: () => request<ScheduleItem[]>("/api/schedule"),
+  listCourses: async (params?: { featured?: boolean; teacher_id?: number }): Promise<Course[]> => {
+    let result = state.courses.slice();
+    if (params?.featured !== undefined) {
+      result = result.filter((c) => c.is_featured === params.featured);
+    }
+    if (params?.teacher_id !== undefined) {
+      result = result.filter((c) => c.teacher_id === params.teacher_id);
+    }
+    result.sort((a, b) => Number(b.is_featured) - Number(a.is_featured) || b.id - a.id);
+    return delay(result);
+  },
 
-  listNotifications: () => request<Notification[]>("/api/notifications"),
-  markNotificationRead: (id: number) =>
-    request<Notification>(`/api/notifications/${id}/read`, { method: "POST" }),
+  getCourse: async (id: number): Promise<Course> => {
+    const course = state.courses.find((c) => c.id === id);
+    if (!course) throw new Error("الكورس غير موجود");
+    return delay(course);
+  },
 
-  listTeachers: () => request<User[]>("/api/teachers"),
-  getTeacher: (id: number) => request<User>(`/api/teachers/${id}`),
+  createCourse: async (data: {
+    title: string;
+    subject: string;
+    grade: string;
+    description?: string;
+    cover_url?: string;
+    is_featured?: boolean;
+  }): Promise<Course> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم إضافة كورسات");
+    }
+    const course: Course = {
+      id: state.nextIds.course++,
+      title: data.title,
+      subject: data.subject,
+      grade: data.grade,
+      description: data.description ?? null,
+      cover_url: data.cover_url ?? null,
+      rating: 0,
+      lessons_count: 0,
+      hours_count: 0,
+      views_count: 0,
+      questions_answered: 0,
+      is_featured: data.is_featured ?? false,
+      teacher_id: teacher.id,
+      teacher,
+      created_at: new Date().toISOString(),
+    };
+    state.courses.push(course);
+    persist();
+    return delay(course);
+  },
 
-  myEnrollments: () => request<Enrollment[]>("/api/enrollments/me"),
-  enroll: (courseId: number) => request<Enrollment>(`/api/enrollments/${courseId}`, { method: "POST" }),
+  listLectures: async (params?: { course_id?: number; teacher_id?: number }): Promise<Lecture[]> => {
+    let result = state.lectures.slice();
+    if (params?.course_id !== undefined) {
+      result = result.filter((l) => l.course_id === params.course_id);
+    }
+    if (params?.teacher_id !== undefined) {
+      const teacherCourseIds = state.courses
+        .filter((c) => c.teacher_id === params.teacher_id)
+        .map((c) => c.id);
+      result = result.filter((l) => teacherCourseIds.includes(l.course_id));
+    }
+    result.sort((a, b) => a.order_index - b.order_index);
+    return delay(result);
+  },
 
-  stats: () => request<Stats>("/api/stats"),
+  createLecture: async (data: {
+    title: string;
+    description?: string;
+    video_url?: string;
+    duration_minutes?: number;
+    order_index?: number;
+    course_id: number;
+  }): Promise<Lecture> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم رفع المحاضرات");
+    }
+    const course = state.courses.find((c) => c.id === data.course_id);
+    if (!course) throw new Error("الكورس غير موجود");
+    const lecture: Lecture = {
+      id: state.nextIds.lecture++,
+      title: data.title,
+      description: data.description ?? null,
+      video_url: data.video_url ?? null,
+      duration_minutes: data.duration_minutes ?? 0,
+      order_index:
+        data.order_index ??
+        (state.lectures.filter((l) => l.course_id === course.id).length + 1),
+      is_published: true,
+      course_id: course.id,
+      views_count: 0,
+      created_at: new Date().toISOString(),
+    };
+    state.lectures.push(lecture);
+    course.lessons_count = state.lectures.filter((l) => l.course_id === course.id).length;
+    course.hours_count = Math.ceil(
+      state.lectures
+        .filter((l) => l.course_id === course.id)
+        .reduce((sum, l) => sum + l.duration_minutes, 0) / 60,
+    );
+    persist();
+    return delay(lecture);
+  },
+
+  listQuestions: async (params?: { answered?: boolean; course_id?: number }): Promise<Question[]> => {
+    let result = state.questions.slice();
+    if (params?.answered !== undefined) {
+      result = result.filter((q) => q.is_answered === params.answered);
+    }
+    if (params?.course_id !== undefined) {
+      result = result.filter((q) => q.course_id === params.course_id);
+    }
+    result.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    return delay(result);
+  },
+
+  askQuestion: async (data: { title: string; body: string; course_id?: number }): Promise<Question> => {
+    const student = ensureCurrentUser();
+    const question: Question = {
+      id: state.nextIds.question++,
+      title: data.title,
+      body: data.body,
+      answer: null,
+      is_answered: false,
+      student_id: student.id,
+      course_id: data.course_id ?? null,
+      student,
+      created_at: new Date().toISOString(),
+      answered_at: null,
+    };
+    state.questions.push(question);
+    persist();
+    return delay(question);
+  },
+
+  answerQuestion: async (id: number, answer: string): Promise<Question> => {
+    const teacher = ensureCurrentUser();
+    if (teacher.role !== "teacher") {
+      throw new Error("فقط الأساتذة يمكنهم الإجابة");
+    }
+    const question = state.questions.find((q) => q.id === id);
+    if (!question) throw new Error("السؤال غير موجود");
+    question.answer = answer;
+    question.is_answered = true;
+    question.answered_at = new Date().toISOString();
+    persist();
+    return delay(question);
+  },
+
+  listSchedule: async (): Promise<ScheduleItem[]> => {
+    const sorted = state.scheduleItems.slice().sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
+    return delay(sorted);
+  },
+
+  listNotifications: async (): Promise<Notification[]> => {
+    const userId = getCurrentUserId();
+    if (!userId) return delay([]);
+    const items = state.notificationsByUser[userId] ?? [];
+    const sorted = items.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    return delay(sorted);
+  },
+
+  markNotificationRead: async (id: number): Promise<Notification> => {
+    const userId = getCurrentUserId();
+    if (!userId) throw new Error("الرجاء تسجيل الدخول أولاً");
+    const items = state.notificationsByUser[userId] ?? [];
+    const notification = items.find((n) => n.id === id);
+    if (!notification) throw new Error("الإشعار غير موجود");
+    notification.is_read = true;
+    state.notificationsByUser[userId] = items;
+    persist();
+    return delay(notification);
+  },
+
+  listTeachers: async (): Promise<User[]> => {
+    const teachers = state.users
+      .filter((u) => u.role === "teacher")
+      .sort((a, b) => b.rating - a.rating);
+    return delay(teachers);
+  },
+
+  getTeacher: async (id: number): Promise<User> => {
+    const user = state.users.find((u) => u.id === id && u.role === "teacher");
+    if (!user) throw new Error("الأستاذ غير موجود");
+    return delay(user);
+  },
+
+  myEnrollments: async (): Promise<Enrollment[]> => {
+    const userId = getCurrentUserId();
+    if (!userId) return delay([]);
+    const items = state.enrollments
+      .filter((e) => e.student_id === userId)
+      .map((e) => {
+        const course = state.courses.find((c) => c.id === e.course_id);
+        return course ? { ...e, course } : e;
+      });
+    return delay(items);
+  },
+
+  enroll: async (courseId: number): Promise<Enrollment> => {
+    const student = ensureCurrentUser();
+    const course = state.courses.find((c) => c.id === courseId);
+    if (!course) throw new Error("الكورس غير موجود");
+    const existing = state.enrollments.find(
+      (e) => e.student_id === student.id && e.course_id === courseId,
+    );
+    if (existing) {
+      return delay(existing);
+    }
+    const enrollment: Enrollment = {
+      id: state.nextIds.enrollment++,
+      student_id: student.id,
+      course_id: course.id,
+      progress: 0,
+      score: 0,
+      enrolled_at: new Date().toISOString(),
+      course,
+    };
+    state.enrollments.push(enrollment);
+    persist();
+    return delay(enrollment);
+  },
+
+  stats: async (): Promise<Stats> => {
+    const stats: Stats = {
+      courses_count: state.courses.length,
+      students_count: state.users.filter((u) => u.role === "student").length,
+      lectures_count: state.lectures.length,
+      questions_answered: state.questions.filter((q) => q.is_answered).length,
+    };
+    return delay(stats);
+  },
 };
